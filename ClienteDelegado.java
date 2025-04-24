@@ -1,10 +1,11 @@
 import java.io.*;
 import java.math.BigInteger;
-import java.net.*;
+import java.net.Socket;
 import java.security.*;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
 import javax.crypto.*;
 import javax.crypto.spec.*;
 
@@ -12,103 +13,95 @@ public class ClienteDelegado implements Runnable {
     private static final String SERVIDOR_HOST = "localhost";
     private static final int SERVIDOR_PUERTO = 8888;
     private static final String KEY_FILE_PUBLIC = "server_public.key";
-    
-    // Variables para la comunicación
+
+    private final int id;
+    private final CyclicBarrier barrier;
+
+    // Variables de cifrado
     private PublicKey serverPublicKey;
     private BigInteger g, p, clientPrivate, clientPublic, serverPublic, sharedSecret;
     private SecretKey aesKey;
     private SecretKey hmacKey;
     private IvParameterSpec iv;
-    private final CountDownLatch latch;
-    private final int id;
-    
-    public ClienteDelegado(int id, CountDownLatch latch) {
+
+    public ClienteDelegado(int id, CyclicBarrier barrier) {
         this.id = id;
-        this.latch = latch;
+        this.barrier = barrier;
     }
-    
+
     @Override
     public void run() {
         Socket socket = null;
         DataInputStream in = null;
         DataOutputStream out = null;
-        
+
         try {
-            // Cargar llave pública del servidor
             cargarLlavePublica();
-            
+
             socket = new Socket(SERVIDOR_HOST, SERVIDOR_PUERTO);
             in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
-            
-            // Establecer comunicación segura
+
             establecerComunicacionSegura(in, out);
-            
-            // Recibir tabla de servicios
+
+            // Sincronizar antes de continuar
+            barrier.await();
+
             String tablaCifradaStr = in.readUTF();
             String hmacTablaStr = in.readUTF();
-            
+
             byte[] tablaCifrada = Base64.getDecoder().decode(tablaCifradaStr);
             byte[] hmacTabla = Base64.getDecoder().decode(hmacTablaStr);
-            
-            // Verificar y descifrar tabla
+
             byte[] tablaBytes = descifrarAES(tablaCifrada);
             boolean hmacValido = verificarHMAC(tablaBytes, hmacTabla);
-            
+
             if (!hmacValido) {
                 System.out.println("Cliente " + id + ": Error en la consulta - HMAC inválido");
                 return;
             }
-            
-            // Seleccionar un servicio aleatorio
+
             String[] servicios = {"S1", "S2", "S3"};
             int indiceAleatorio = new SecureRandom().nextInt(servicios.length);
             String idServicio = servicios[indiceAleatorio];
-            
-            // Preparar mensaje
+
             String ipCliente = socket.getLocalAddress().getHostAddress();
             String mensaje = idServicio + "," + ipCliente;
-            
-            // Cifrar y calcular HMAC
+
             byte[] mensajeCifrado = cifrarAES(mensaje.getBytes());
             byte[] hmacMensaje = calcularHMAC(mensaje.getBytes());
-            
-            // Enviar solicitud
+
             out.writeUTF(Base64.getEncoder().encodeToString(mensajeCifrado));
             out.writeUTF(Base64.getEncoder().encodeToString(hmacMensaje));
-            
-            // Recibir respuesta
+
             String respuestaCifradaStr = in.readUTF();
             String hmacRespuestaStr = in.readUTF();
-            
-            // Verificar respuesta
+
             byte[] respuestaCifrada = Base64.getDecoder().decode(respuestaCifradaStr);
             byte[] hmacRespuesta = Base64.getDecoder().decode(hmacRespuestaStr);
-            
+
             byte[] respuestaBytes = descifrarAES(respuestaCifrada);
             boolean hmacRespuestaValido = verificarHMAC(respuestaBytes, hmacRespuesta);
-            
+
             if (hmacRespuestaValido) {
                 System.out.println("Cliente " + id + ": Consulta completada exitosamente");
             } else {
                 System.out.println("Cliente " + id + ": Error en la respuesta - HMAC inválido");
             }
-            
+
+        } catch (BrokenBarrierException | InterruptedException e) {
+            System.err.println("Cliente " + id + ": Error de sincronización - " + e.getMessage());
         } catch (Exception e) {
             System.err.println("Error en cliente delegado " + id + ": " + e.getMessage());
-            //e.printStackTrace();
         } finally {
             try {
                 if (in != null) in.close();
                 if (out != null) out.close();
                 if (socket != null) socket.close();
-            } catch (IOException e) {
-                //e.printStackTrace();
-            }
-            latch.countDown();
+            } catch (IOException ignored) {}
         }
     }
-    
+
     private void cargarLlavePublica() throws Exception {
         try (ObjectInputStream keyIn = new ObjectInputStream(new FileInputStream(KEY_FILE_PUBLIC))) {
             serverPublicKey = (PublicKey) keyIn.readObject();

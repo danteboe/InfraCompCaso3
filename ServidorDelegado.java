@@ -1,6 +1,6 @@
 import java.io.*;
 import java.math.BigInteger;
-import java.net.*;
+import java.net.Socket;
 import java.security.*;
 import java.util.Arrays;
 import java.util.Base64;
@@ -31,28 +31,29 @@ public class ServidorDelegado implements Runnable {
             // Iniciar protocolo
             String hello = in.readUTF();
             if (!"HELLO".equals(hello)) {
-                throw new Exception("Protocolo incorrecto. No se recibió HELLO");
+                throw new Exception("Protocolo incorrecto. No se recibió HELLO :(");
             }
             
-            // Generar y enviar reto
+            // Generar y enviar retorno
             SecureRandom random = new SecureRandom();
             byte[] retoBytes = new byte[16];
             random.nextBytes(retoBytes);
-            String reto = Base64.getEncoder().encodeToString(retoBytes);
-            out.writeUTF(reto);
+            String retorn = Base64.getEncoder().encodeToString(retoBytes);
+            out.writeUTF(retorn);
             
-            // Calcular y verificar respuesta al reto (Rta=D(K_w-,Reto))
+            // Calcular y verificar respuesta al retorno (Rta=D(K_w-,Retorno))
             String respuesta = in.readUTF();
-            boolean retoValido = verificarRespuestaReto(reto, respuesta);
+            boolean retoValido = verificarRespuestaReto(retorn, respuesta);
             
             if (retoValido) {
                 out.writeUTF("OK");
             } else {
                 out.writeUTF("ERROR");
-                throw new Exception("Verificación de reto fallida");
+                throw new Exception("Verificación del retorno fallida");
             }
             
-            // Generar parámetros Diffie-Hellman
+            // partimos de este recurso para la implementación de Diffie-Hellman en un cliente-servidor
+            //https://www.geeksforgeeks.org/java-implementation-of-diffie-hellman-algorithm-between-client-and-server/
             long inicioGeneracionDH = System.nanoTime();
             AlgorithmParameterGenerator paramGen = AlgorithmParameterGenerator.getInstance("DH");
             paramGen.init(ServidorPrincipal.getKeySizeDh());
@@ -60,12 +61,10 @@ public class ServidorDelegado implements Runnable {
             DHParameterSpec dhSpec = params.getParameterSpec(DHParameterSpec.class);
             
             p = dhSpec.getP();
-            g = dhSpec.getG();
-            
-            // Generar llave privada para el servidor
+            g = dhSpec.getG();    
+            // se genera la llave privada para el servidor
             serverPrivate = new BigInteger(ServidorPrincipal.getKeySizeDh() - 1, random);
-            
-            // Calcular llave pública del servidor (G^x mod P)
+            // Se calcula la llave pública del servidor (G^x mod P)
             serverPublic = g.modPow(serverPrivate, p);
             
             // Enviar G, P y llave pública del servidor
@@ -73,28 +72,28 @@ public class ServidorDelegado implements Runnable {
             out.writeUTF(p.toString());
             out.writeUTF(serverPublic.toString());
             
-            // Firmar (G,P,G^) con llave privada del servidor
+            // Firmamos (G,P,G^) con llave privada del servidor
             String mensajeDH = g.toString() + "," + p.toString() + "," + serverPublic.toString();
             byte[] firmaDH = firmar(mensajeDH.getBytes());
             out.writeUTF(Base64.getEncoder().encodeToString(firmaDH));
             
-            // Recibir respuesta de verificación
+            // Recibimos respuesta de verificación
             String respuestaDH = in.readUTF();
             if (!"OK".equals(respuestaDH)) {
                 throw new Exception("Cliente rechazó los parámetros DH");
             }
             
-            // Recibir llave pública del cliente
+            // Recibimos llave pública del cliente
             String clientPublicStr = in.readUTF();
             clientPublic = new BigInteger(clientPublicStr);
             
-            // Calcular secreto compartido
+            // Calculamos secreto compartido
             sharedSecret = clientPublic.modPow(serverPrivate, p);
             
-            // Generar llaves simétricas a partir del secreto compartido
+            // Generamos llaves simétricas a partir del secreto compartido
             generarLlavesDerivadas();
             
-            // Enviar IV para el cifrado AES
+            // Enviar vector (iv) para el cifrado AES
             byte[] ivBytes = new byte[16];
             random.nextBytes(ivBytes);
             iv = new IvParameterSpec(ivBytes);
@@ -102,15 +101,14 @@ public class ServidorDelegado implements Runnable {
             long finGeneracionDH = System.nanoTime();
             System.out.println("Tiempo generación DH: " + (finGeneracionDH - inicioGeneracionDH) / 1000000.0 + " ms");
             
-            // Preparar tabla de servicios para enviar
+            // Preparamos tabla de servicios para enviar
             StringBuilder tablaStr = new StringBuilder();
             for (String id : ServidorPrincipal.tablaServicios.keySet()) {
                 String[] servicioInfo = ServidorPrincipal.tablaServicios.get(id);
-                tablaStr.append(id).append(",")
-                       .append(servicioInfo[0]).append("\n");
+                tablaStr.append(id).append(",").append(servicioInfo[0]).append("\n");
             }
             
-            // Cifrar tabla de servicios
+            // ciframos la tabla de servicios
             long inicioCifrado = System.nanoTime();
             byte[] tablaCifrada = cifrarAES(tablaStr.toString().getBytes());
             long finCifrado = System.nanoTime();
@@ -122,10 +120,10 @@ public class ServidorDelegado implements Runnable {
             long finCifradoRSA = System.nanoTime();
             System.out.println("Tiempo cifrado asimétrico (RSA): " + (finCifradoRSA - inicioCifradoRSA) / 1000000.0 + " ms");
             
-            // Enviar tabla cifrada
+            // se envía tabla cifrada
             out.writeUTF(Base64.getEncoder().encodeToString(tablaCifrada));
             
-            // Calcular y enviar HMAC de la tabla
+            // calculamos  y enviar HMAC de la tabla
             byte[] hmacTabla = calcularHMAC(tablaStr.toString().getBytes());
             out.writeUTF(Base64.getEncoder().encodeToString(hmacTabla));
             
@@ -188,18 +186,17 @@ public class ServidorDelegado implements Runnable {
         }
     }
     
-    private boolean verificarRespuestaReto(String reto, String respuesta) throws Exception {
+    private boolean verificarRespuestaReto(String retorno, String respuesta) throws Exception {
         try {
             // Descifrar la respuesta usando la llave privada del servidor
             byte[] respuestaCifrada = Base64.getDecoder().decode(respuesta);
-            Cipher cipher = Cipher.getInstance("RSA");
-            cipher.init(Cipher.DECRYPT_MODE, ServidorPrincipal.serverKeyPair.getPrivate());
-            byte[] respuestaDescifrada = cipher.doFinal(respuestaCifrada);
+            Cipher cifradore = Cipher.getInstance("RSA");
+            cifradore.init(Cipher.DECRYPT_MODE, ServidorPrincipal.serverKeyPair.getPrivate());
+            byte[] respuestaDescifrada = cifradore.doFinal(respuestaCifrada);
             
-            // Comparar respuesta descifrada con reto original
-            return reto.equals(new String(respuestaDescifrada));
-        } catch (Exception e) {
-            return false;
+            // se compara respuesta descifrada con la original
+            return retorno.equals(new String(respuestaDescifrada));
+        } catch (Exception e) {return false;
         }
     }
     
@@ -209,7 +206,6 @@ public class ServidorDelegado implements Runnable {
         signature.update(datos);
         return signature.sign();
     }
-    
     private void generarLlavesDerivadas() throws Exception {
         // Usar SHA-512 para obtener 512 bits de la llave maestra
         MessageDigest sha = MessageDigest.getInstance("SHA-512");
@@ -226,41 +222,41 @@ public class ServidorDelegado implements Runnable {
     }
     
     private byte[] cifrarAES(byte[] datos) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.ENCRYPT_MODE, aesKey, iv);
-        return cipher.doFinal(datos);
+        Cipher cifradore = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cifradore.init(Cipher.ENCRYPT_MODE, aesKey, iv);
+        return cifradore.doFinal(datos);
     }
     
     private byte[] descifrarAES(byte[] datosCifrados) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.DECRYPT_MODE, aesKey, iv);
-        return cipher.doFinal(datosCifrados);
+        Cipher cifradore = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cifradore.init(Cipher.DECRYPT_MODE, aesKey, iv);
+        return cifradore.doFinal(datosCifrados);
     }
     
     private byte[] cifrarRSA(byte[] datos) throws Exception {
         // Usado solo para comparar tiempos
-        Cipher cipher = Cipher.getInstance("RSA");
-        cipher.init(Cipher.ENCRYPT_MODE, ServidorPrincipal.serverKeyPair.getPublic());
+        Cipher cifradore = Cipher.getInstance("RSA");
+        cifradore.init(Cipher.ENCRYPT_MODE, ServidorPrincipal.serverKeyPair.getPublic());
         
-        // RSA tiene límite en el tamaño de datos a cifrar
-        // Solo ciframos un bloque para la comparación
-        int blockSize = ServidorPrincipal.getKeySizeDh() / 8 - 11; // Espacio para padding
-        if (datos.length > blockSize) {
-            byte[] primerBloque = Arrays.copyOfRange(datos, 0, blockSize);
-            return cipher.doFinal(primerBloque);
+        // RSA tiene límite en el tamaño de datos a cifrar, solo ciframos un bloque para la comparación
+        int tamanoBloq = ServidorPrincipal.getKeySizeDh() / 8 - 11; // primero se obtiene el tamaño en bytes. RSA usa 11 bytes de padding! por eso se usa -11. no queremos que eso afecte los resultados de tiempo
+        //es un machetazo pero así sí funciona
+        if (datos.length > tamanoBloq) {
+            byte[] primerBloque = Arrays.copyOfRange(datos, 0, tamanoBloq);
+            return cifradore.doFinal(primerBloque);
         } else {
-            return cipher.doFinal(datos);
+            return cifradore.doFinal(datos);
         }
     }
-    
+
+    //Después de haber obtenido la llave, se usa para calcular y verificar el hmac.
+    //guia que usamos: https://www.tutorialspoint.com/java_cryptography/java_cryptography_creating_mac.htm
     private byte[] calcularHMAC(byte[] datos) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(hmacKey);
         return mac.doFinal(datos);
     }
-    
     private boolean verificarHMAC(byte[] datos, byte[] hmacRecibido) throws Exception {
         byte[] hmacCalculado = calcularHMAC(datos);
-        return MessageDigest.isEqual(hmacCalculado, hmacRecibido);
-    }
+        return MessageDigest.isEqual(hmacCalculado, hmacRecibido);}
 }

@@ -8,19 +8,19 @@ public class GeneradorLlaves {
     
     public static void main(String[] args) {
         try {
-            System.out.println("Generando par de llaves RSA de " + KEY_SIZE + " bits...");
+            System.out.println("Generando par de llaves RSA de " + KEY_SIZE + " bits.......");
             
-            // Generar par de llaves RSA
+            // Generamos el  par de llaves RSA!
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
             keyGen.initialize(KEY_SIZE);
             KeyPair keyPair = keyGen.generateKeyPair();
             
-            // Guardar llave pública
+            // Guardamos le llave pública
             ObjectOutputStream publicKeyOut = new ObjectOutputStream(new FileOutputStream(KEY_FILE_PUBLIC));
             publicKeyOut.writeObject(keyPair.getPublic());
             publicKeyOut.close();
             
-            // Guardar llave privada
+            // Guardamos la llave privada
             ObjectOutputStream privateKeyOut = new ObjectOutputStream(new FileOutputStream(KEY_FILE_PRIVATE));
             privateKeyOut.writeObject(keyPair.getPrivate());
             privateKeyOut.close();
@@ -31,7 +31,7 @@ public class GeneradorLlaves {
             
         } catch (Exception e) {
             System.err.println("Error generando las llaves: " + e.getMessage());
-            e.printStackTrace();
+            //e.printStackTrace();
         }
     }
 }

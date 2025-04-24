@@ -60,7 +60,7 @@ public class Cliente {
             out = new DataOutputStream(socket.getOutputStream());
             try (Scanner scanner = new Scanner(System.in)) {
                 // Iniciar protocolo
-                System.out.println("Conectando con el servidor principal...");
+                System.out.println("Conectando con el servidor principal");
                 establecerComunicacionSegura(in, out);
             
             // Recibir tabla de servicios cifrada
@@ -75,15 +75,14 @@ public class Cliente {
             boolean hmacValido = verificarHMAC(tablaBytes, hmacTabla);
             
             if (!hmacValido) {
-                System.out.println("Error en la consulta: HMAC inválido");
+                System.out.println("Error en la consulta (HMAC inválido)");
                 return;
             }
             
-            // Mostrar servicios disponibles
             String tablaStr = new String(tablaBytes);
             System.out.println("\nServicios disponibles:");
             System.out.println("ID\tServicio");
-            System.out.println("-----------------");
+            System.out.println("-");
             
             String[] lineas = tablaStr.split("\n");
             for (String linea : lineas) {
@@ -91,7 +90,7 @@ public class Cliente {
             }
             
             // Solicitar servicio al usuario
-            System.out.print("\nIngrese el ID del servicio deseado: ");
+            System.out.print("\nIngrese el servicio deseado: ");
             String idServicio = scanner.nextLine().trim();
             
             // Preparar mensaje con ID de servicio y dirección IP del cliente
@@ -213,9 +212,6 @@ public class Cliente {
                 if (in != null) in.close();
                 if (out != null) out.close();
                 if (socket != null) socket.close();
-                
-                // Pequeña pausa entre consultas
-                Thread.sleep(100);
             }
         }
     }
