@@ -19,7 +19,8 @@ public class ServidorPrincipal {
         try {
             inicializarTablaServicios();
             cargarOGenerarLlaves();
-
+            //el backlog de 100 hizo que el server no exoplote
+            //básicamente es el número de conexiones que puede aceptar el servidor antes de rechazar nuevas conexiones 
             try (ServerSocket serverSocket = new ServerSocket(PUERTO, 100)) {
                 System.out.println("Servidor principal iniciado en el puerto " + PUERTO);
                 while (true) {
