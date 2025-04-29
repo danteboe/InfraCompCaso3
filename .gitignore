@@ -1,8 +1,6 @@
 Cliente.class
 ClienteDelegado.class
 ClientePruebaRendimiento.class
-server_private.key
 GeneradorLlaves.class
-server_public.key
 ServidorDelegado.class
 ServidorPrincipal.class
