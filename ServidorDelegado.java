@@ -74,7 +74,10 @@ public class ServidorDelegado implements Runnable {
             
             // Firmamos (G,P,G^) con llave privada del servidor
             String mensajeDH = g.toString() + "," + p.toString() + "," + serverPublic.toString();
+            long inicioFirma = System.nanoTime();
             byte[] firmaDH = firmar(mensajeDH.getBytes());
+            long finFirma = System.nanoTime();
+            System.out.println("Tiempo de firmado DH: " + (finFirma - inicioFirma) / 1_000_000.0 + " ms");
             out.writeUTF(Base64.getEncoder().encodeToString(firmaDH));
             
             // Recibimos respuesta de verificación
